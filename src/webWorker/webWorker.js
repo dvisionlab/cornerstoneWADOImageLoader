@@ -110,21 +110,39 @@ self.onmessage = async function (msg) {
         'POST MESSAGE DATA:',
         taskHandlers[msg.data.taskType].handler(msg.data)
       );
-      const { result, transferList } = await taskHandlers[
-        msg.data.taskType
-      ].handler(msg.data);
+      if (msg.data.taskType === 'sleepTask') {
+        const { result, timeout } = await taskHandlers[
+          msg.data.taskType
+        ].handler(msg.data);
 
-      console.log('WEB WORKER RESULTS:', result);
+        const transferList = [];
 
-      self.postMessage(
-        {
-          taskType: msg.data.taskType,
-          status: 'success',
-          result,
-          workerIndex: msg.data.workerIndex,
-        },
-        transferList
-      );
+        self.postMessage(
+          {
+            taskType: msg.data.taskType,
+            status: 'success',
+            result: setTimeout(result, timeout),
+            workerIndex: msg.data.workerIndex,
+          },
+          transferList
+        );
+      } else {
+        const { result, transferList } = await taskHandlers[
+          msg.data.taskType
+        ].handler(msg.data);
+
+        console.log('WEB WORKER RESULTS:', result);
+
+        self.postMessage(
+          {
+            taskType: msg.data.taskType,
+            status: 'success',
+            result,
+            workerIndex: msg.data.workerIndex,
+          },
+          transferList
+        );
+      }
     } catch (error) {
       console.log(`task ${msg.data.taskType} failed - ${error.message}`, error);
       self.postMessage({

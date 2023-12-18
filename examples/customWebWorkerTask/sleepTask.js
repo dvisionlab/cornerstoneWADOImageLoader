@@ -9,12 +9,17 @@
 
   function sleepTaskHandler(data, doneCallback) {
     // we fake real processing by setting a timeout
-    setTimeout(function () {
+    /*setTimeout(function () {
       // once the task is done, we invoke the callback with our result
       if (typeof doneCallback === 'function') {
         doneCallback({});
       }
-    }, sleepConfig.sleepTask.sleepTime);
+    }, sleepConfig.sleepTask.sleepTime);*/
+
+    return {
+      result: {},
+      timeout: sleepConfig.sleepTask.sleepTime,
+    };
   }
 
   // register ourselves to receive messages
