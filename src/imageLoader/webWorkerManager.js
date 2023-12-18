@@ -1,4 +1,15 @@
+// Not sure why but webpack isn't splitting this out unless we explicitly use worker-loader!
+// eslint-disable-next-line
+// import cornerstoneWADOImageLoaderWebWorker from 'worker-loader!../webWorker/index.worker.js';
 import cornerstoneWADOImageLoaderWebWorker from '../webWorker/index.worker.js';
+
+// This is for the Webpack 5 approch but it's currently broken
+// so we will continue relying on worker-loader for now
+// https://github.com/webpack/webpack/issues/13899
+/* const cornerstoneWADOImageLoaderWebWorkerPath = new URL(
+  '../webWorker/index.js',
+  import.meta.url
+);*/
 
 import { getOptions } from './internal/options.js';
 
@@ -21,7 +32,6 @@ const defaultConfig = {
   taskConfiguration: {
     decodeTask: {
       initializeCodecsOnStartup: false,
-      usePDFJS: false,
       strict: options.strict,
     },
   },
@@ -67,6 +77,8 @@ function startTaskOnWebWorker() {
       // assign this task to this web worker and send the web worker
       // a message to execute it
       webWorkers[i].task = task;
+      console.log('TASK:', task);
+      console.log('TASK DATA:', task.data);
       webWorkers[i].worker.postMessage(
         {
           taskType: task.taskType,
@@ -92,27 +104,60 @@ function startTaskOnWebWorker() {
  * @param msg
  */
 function handleMessageFromWorker(msg) {
-  // console.log('handleMessageFromWorker', msg.data);
+  const workerIndex = msg.data.workerIndex || 0;
+
+  console.log('MESSAGE:', msg);
   if (msg.data.taskType === 'initialize') {
-    webWorkers[msg.data.workerIndex].status = 'ready';
-    startTaskOnWebWorker();
+    // Handle initialization message
+    if (workerIndex !== undefined && webWorkers[workerIndex]) {
+      webWorkers[workerIndex].status = 'ready';
+      startTaskOnWebWorker();
+    } else {
+      console.error('Invalid worker index during initialization:', workerIndex);
+    }
   } else {
-    const start = webWorkers[msg.data.workerIndex].task.start;
+    // Handle task completion message
+    const worker = webWorkers[workerIndex];
 
-    const action = msg.data.status === 'success' ? 'resolve' : 'reject';
+    if (worker) {
+      const task = worker.task;
 
-    webWorkers[msg.data.workerIndex].task.deferred[action](msg.data.result);
+      if (task) {
+        if (msg.data.status === 'success') {
+          const result = msg.data.result || msg.data || undefined;
 
-    webWorkers[msg.data.workerIndex].task = undefined;
+          if (result !== undefined) {
+            task.deferred.resolve(result);
+          } else {
+            console.error('Result is undefined:', msg.data);
+            task.deferred.reject('Result is undefined');
+          }
+        } else {
+          const result = msg.data.result || msg.data || undefined;
 
-    statistics.numTasksExecuting--;
-    webWorkers[msg.data.workerIndex].status = 'ready';
-    statistics.numTasksCompleted++;
+          if (result !== undefined) {
+            task.deferred.reject(result);
+          } else {
+            console.error('Result is undefined:', msg.data);
+            task.deferred.reject('Result is undefined');
+          }
+        }
 
-    const end = new Date().getTime();
+        // Clear the task for this worker
+        worker.task = undefined;
 
-    statistics.totalTaskTimeInMS += end - start;
+        // Update statistics
+        statistics.numTasksExecuting--;
+        worker.status = 'ready';
+        statistics.numTasksCompleted++;
+      } else {
+        console.error('No task assigned to worker:', workerIndex);
+      }
+    } else {
+      console.error('Invalid worker index:', workerIndex);
+    }
 
+    // Start a new task if available
     startTaskOnWebWorker();
   }
 }
@@ -129,10 +174,24 @@ function spawnWebWorker() {
   // spawn the webworker
   const worker = new cornerstoneWADOImageLoaderWebWorker();
 
+  // This is for the Webpack 5 approach but it's currently broken
+  /* const worker = new Worker(cornerstoneWADOImageLoaderWebWorkerPath, {
+    name: `cornerstoneWADOImageLoaderWebWorkerPath-${webWorkers.length + 1}`,
+    type: 'module',
+  });*/
+
+  // const worker = new Worker(
+  //   './cornerstoneWADOImageLoaderWebWorker.bundle.min.js',
+  //   {
+  //     name: `cornerstoneWADOImageLoaderWebWorkerPath-${webWorkers.length + 1}`,
+  //   }
+  // );
+  console.log('WEBWORKERS BEFORE:', webWorkers);
   webWorkers.push({
     worker,
     status: 'initializing',
   });
+  console.log('WEBWORKERS AFTER PUSH:', webWorkers);
   worker.addEventListener('message', handleMessageFromWorker);
   worker.postMessage({
     taskType: 'initialize',
@@ -150,7 +209,7 @@ function initialize(configObject) {
 
   // prevent being initialized more than once
   if (config) {
-    throw new Error('WebWorkerManager already initialized');
+    // throw new Error('WebWorkerManager already initialized');
   }
 
   config = configObject;

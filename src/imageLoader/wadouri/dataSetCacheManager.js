@@ -1,5 +1,8 @@
 import external from '../../externalModules.js';
 import { xhrRequest } from '../internal/index.js';
+import { combineFrameInstanceDataset } from './combineFrameInstanceDataset.js';
+import multiframeDataset from './retrieveMultiframeDataset.js';
+import dataSetFromPartialContent from './dataset-from-partial-content.js';
 
 /**
  * This object supports loading of DICOM P10 dataset from a uri and caching it so it can be accessed
@@ -19,11 +22,42 @@ function isLoaded(uri) {
 }
 
 function get(uri) {
-  if (!loadedDataSets[uri]) {
-    return;
+  let dataSet;
+
+  if (uri.includes('&frame=')) {
+    const { frame, dataSet: multiframeDataSet } =
+      multiframeDataset.retrieveMultiframeDataset(uri);
+
+    dataSet = combineFrameInstanceDataset(frame, multiframeDataSet);
+  } else if (loadedDataSets[uri]) {
+    dataSet = loadedDataSets[uri].dataSet;
   }
 
-  return loadedDataSets[uri].dataSet;
+  return dataSet;
+}
+
+function update(uri, dataSet) {
+  const loadedDataSet = loadedDataSets[uri];
+
+  if (!loadedDataSet) {
+    console.error(`No loaded dataSet for uri ${uri}`);
+
+    return;
+  }
+  // Update dataset
+  cacheSizeInBytes -= loadedDataSet.dataSet.byteArray.length;
+  loadedDataSet.dataSet = dataSet;
+  cacheSizeInBytes += dataSet.byteArray.length;
+
+  external.cornerstone.triggerEvent(
+    external.cornerstone.events,
+    'datasetscachechanged',
+    {
+      uri,
+      action: 'updated',
+      cacheInfo: getInfo(),
+    }
+  );
 }
 
 // loads the dicom dataset from the wadouri sp
@@ -33,7 +67,7 @@ function load(uri, loadRequest = xhrRequest, imageId) {
   // if already loaded return it right away
   if (loadedDataSets[uri]) {
     // console.log('using loaded dataset ' + uri);
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       loadedDataSets[uri].cacheCount++;
       resolve(loadedDataSets[uri].dataSet);
     });
@@ -53,14 +87,45 @@ function load(uri, loadRequest = xhrRequest, imageId) {
   // handle success and failure of the XHR request load
   const promise = new Promise((resolve, reject) => {
     loadDICOMPromise
-      .then(function(dicomPart10AsArrayBuffer /* , xhr*/) {
+      .then(async function (dicomPart10AsArrayBuffer) {
+        const partialContent = {
+          isPartialContent: false,
+          fileTotalLength: null,
+        };
+
+        // Allow passing extra data with the loader promise so as not to change
+        // the API
+        if (!(dicomPart10AsArrayBuffer instanceof ArrayBuffer)) {
+          if (!dicomPart10AsArrayBuffer.arrayBuffer) {
+            return reject(
+              new Error(
+                'If not returning ArrayBuffer, must return object with `arrayBuffer` parameter'
+              )
+            );
+          }
+          partialContent.isPartialContent =
+            dicomPart10AsArrayBuffer.flags.isPartialContent;
+          partialContent.fileTotalLength =
+            dicomPart10AsArrayBuffer.flags.fileTotalLength;
+          dicomPart10AsArrayBuffer = dicomPart10AsArrayBuffer.arrayBuffer;
+        }
+
         const byteArray = new Uint8Array(dicomPart10AsArrayBuffer);
 
         // Reject the promise if parsing the dicom file fails
         let dataSet;
 
         try {
-          dataSet = dicomParser.parseDicom(byteArray);
+          if (partialContent.isPartialContent) {
+            // This dataSet object will include a fetchMore function,
+            dataSet = await dataSetFromPartialContent(byteArray, loadRequest, {
+              uri,
+              imageId,
+              fileTotalLength: partialContent.fileTotalLength,
+            });
+          } else {
+            dataSet = dicomParser.parseDicom(byteArray);
+          }
         } catch (error) {
           return reject(error);
         }
@@ -118,7 +183,7 @@ function unload(uri) {
   }
 }
 
-export function getInfo() {
+function getInfo() {
   return {
     cacheSizeInBytes,
     numberOfDataSetsCached: Object.keys(loadedDataSets).length,
@@ -129,7 +194,10 @@ export function getInfo() {
 function purge() {
   loadedDataSets = {};
   promises = {};
+  cacheSizeInBytes = 0;
 }
+
+export { loadedDataSets };
 
 export default {
   isLoaded,
@@ -138,4 +206,5 @@ export default {
   getInfo,
   purge,
   get,
+  update,
 };

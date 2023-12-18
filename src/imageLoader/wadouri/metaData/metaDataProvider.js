@@ -6,12 +6,45 @@ import getImagePixelModule from './getImagePixelModule.js';
 import getOverlayPlaneModule from './getOverlayPlaneModule.js';
 import getLUTs from './getLUTs.js';
 import getModalityLUTOutputPixelRepresentation from './getModalityLUTOutputPixelRepresentation.js';
+import { getDirectFrameInformation } from '../combineFrameInstanceDataset.js';
+import multiframeDataset from '../retrieveMultiframeDataset.js';
+import {
+  getImageTypeSubItemFromDataset,
+  extractOrientationFromDataset,
+  extractPositionFromDataset,
+  extractSpacingFromDataset,
+  extractSliceThicknessFromDataset,
+} from './extractPositioningFromDataset.js';
+import isNMReconstructable from '../../isNMReconstructable.js';
 
 function metaDataProvider(type, imageId) {
-  const { dicomParser } = external;
   const parsedImageId = parseImageId(imageId);
 
-  const dataSet = dataSetCacheManager.get(parsedImageId.url);
+  if (type === 'multiframeModule') {
+    const multiframeData = multiframeDataset.retrieveMultiframeDataset(
+      parsedImageId.url
+    );
+
+    if (!multiframeData.dataSet) {
+      return;
+    }
+
+    const multiframeInfo = getDirectFrameInformation(
+      multiframeData.dataSet,
+      multiframeData.frame
+    );
+
+    return multiframeInfo;
+  }
+
+  const { dicomParser } = external;
+
+  let url = parsedImageId.url;
+
+  if (parsedImageId.frame) {
+    url = `${url}&frame=${parsedImageId.frame}`;
+  }
+  const dataSet = dataSetCacheManager.get(url);
 
   if (!dataSet) {
     return;
@@ -25,6 +58,8 @@ function metaDataProvider(type, imageId) {
       studyInstanceUID: dataSet.string('x0020000d'),
       seriesDate: dicomParser.parseDA(dataSet.string('x00080021')),
       seriesTime: dicomParser.parseTM(dataSet.string('x00080031') || ''),
+      acquisitionDate: dicomParser.parseDA(dataSet.string('x00080022') || ''),
+      acquisitionTime: dicomParser.parseTM(dataSet.string('x00080032') || ''),
     };
   }
 
@@ -37,9 +72,25 @@ function metaDataProvider(type, imageId) {
   }
 
   if (type === 'imagePlaneModule') {
-    const imageOrientationPatient = getNumberValues(dataSet, 'x00200037', 6);
-    const imagePositionPatient = getNumberValues(dataSet, 'x00200032', 3);
-    const pixelSpacing = getNumberValues(dataSet, 'x00280030', 2);
+    const imageOrientationPatient = extractOrientationFromDataset(dataSet);
+
+    const imagePositionPatient = extractPositionFromDataset(dataSet);
+
+    const pixelSpacing = extractSpacingFromDataset(dataSet);
+
+    let frameOfReferenceUID;
+
+    if (dataSet.elements.x00200052) {
+      frameOfReferenceUID = dataSet.string('x00200052');
+    }
+
+    const sliceThickness = extractSliceThicknessFromDataset(dataSet);
+
+    let sliceLocation;
+
+    if (dataSet.elements.x00201041) {
+      sliceLocation = dataSet.floatString('x00201041');
+    }
 
     let columnPixelSpacing = null;
 
@@ -68,18 +119,36 @@ function metaDataProvider(type, imageId) {
     }
 
     return {
-      frameOfReferenceUID: dataSet.string('x00200052'),
+      frameOfReferenceUID,
       rows: dataSet.uint16('x00280010'),
       columns: dataSet.uint16('x00280011'),
       imageOrientationPatient,
       rowCosines,
       columnCosines,
       imagePositionPatient,
-      sliceThickness: dataSet.floatString('x00180050'),
-      sliceLocation: dataSet.floatString('x00201041'),
+      sliceThickness,
+      sliceLocation,
       pixelSpacing,
       rowPixelSpacing,
       columnPixelSpacing,
+    };
+  }
+
+  if (type === 'nmMultiframeGeometryModule') {
+    const modality = dataSet.string('x00080060');
+    const imageSubType = getImageTypeSubItemFromDataset(dataSet, 2);
+
+    return {
+      modality,
+      imageType: dataSet.string('x00080008'),
+      imageSubType,
+      imageOrientationPatient: extractOrientationFromDataset(dataSet),
+      imagePositionPatient: extractPositionFromDataset(dataSet),
+      sliceThickness: extractSliceThicknessFromDataset(dataSet),
+      pixelSpacing: extractSpacingFromDataset(dataSet),
+      numberOfFrames: dataSet.uint16('x00280008'),
+      isNMReconstructable:
+        isNMReconstructable(imageSubType) && modality.includes('NM'),
     };
   }
 
@@ -100,9 +169,8 @@ function metaDataProvider(type, imageId) {
   }
 
   if (type === 'voiLutModule') {
-    const modalityLUTOutputPixelRepresentation = getModalityLUTOutputPixelRepresentation(
-      dataSet
-    );
+    const modalityLUTOutputPixelRepresentation =
+      getModalityLUTOutputPixelRepresentation(dataSet);
 
     return {
       windowCenter: getNumberValues(dataSet, 'x00281050', 1),
@@ -136,18 +204,41 @@ function metaDataProvider(type, imageId) {
         radiopharmaceuticalStartTime: dicomParser.parseTM(
           firstRadiopharmaceuticalInfoDataSet.string('x00181072') || ''
         ),
-        radionuclideTotalDose: firstRadiopharmaceuticalInfoDataSet.floatString(
-          'x00181074'
-        ),
-        radionuclideHalfLife: firstRadiopharmaceuticalInfoDataSet.floatString(
-          'x00181075'
-        ),
+        radionuclideTotalDose:
+          firstRadiopharmaceuticalInfoDataSet.floatString('x00181074'),
+        radionuclideHalfLife:
+          firstRadiopharmaceuticalInfoDataSet.floatString('x00181075'),
       },
     };
   }
 
   if (type === 'overlayPlaneModule') {
     return getOverlayPlaneModule(dataSet);
+  }
+
+  // Note: this is not a DICOM module, but a useful metadata that can be
+  // retrieved from the image
+  if (type === 'transferSyntax') {
+    return {
+      transferSyntaxUID: dataSet.string('x00020010'),
+    };
+  }
+
+  if (type === 'petSeriesModule') {
+    return {
+      correctedImage: dataSet.string('x00280051'),
+      units: dataSet.string('x00541001'),
+      decayCorrection: dataSet.string('x00541102'),
+    };
+  }
+
+  if (type === 'petImageModule') {
+    return {
+      frameReferenceTime: dicomParser.floatString(
+        dataSet.string('x00541300') || ''
+      ),
+      actualFrameDuration: dicomParser.intString(dataSet.string('x00181242')),
+    };
   }
 }
 
