@@ -14,7 +14,7 @@ const devConfig = {
     // Bundles; takes precedence over contentBase
     // Static content
     static: path.resolve(path.join(__dirname, './../../')),
-    port: 4444,
+    port: 5555,
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',
@@ -24,7 +24,5 @@ const devConfig = {
     new webpack.HotModuleReplacementPlugin({})
   ]*/
 };
-
-console.log(devConfig);
 
 module.exports = merge(baseConfig, devConfig);

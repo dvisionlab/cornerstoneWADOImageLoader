@@ -10,6 +10,7 @@ instead. There you can find
 # Prerequisites
 
 - nvm use 16
+- do not use live server but use npm run dev
 
 # cornerstone WADO Image Loader
 
