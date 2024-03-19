@@ -1,8 +1,15 @@
 # :no_entry: [DEPRECATED] Active at new home [@cornerstonejs/dicom-image-loader](https://github.com/cornerstonejs/cornerstone3D-beta/tree/main/packages/dicomImageLoader)
 
-This repo is no longer supported, please consider using [@cornerstonejs/dicom-image-loader](https://github.com/cornerstonejs/cornerstone3D-beta/tree/main/packages/dicomImageLoader) instead. There you can find 
+This repo is no longer supported, please consider using
+[@cornerstonejs/dicom-image-loader](https://github.com/cornerstonejs/cornerstone3D-beta/tree/main/packages/dicomImageLoader)
+instead. There you can find
+
 - Typescript support (and type definitions)
 - Better developer experience (e.g. mono repo, linting, etc)
+
+# Prerequisites
+
+- nvm use 16
 
 # cornerstone WADO Image Loader
 
