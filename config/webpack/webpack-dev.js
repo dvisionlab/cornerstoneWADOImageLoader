@@ -14,7 +14,7 @@ const devConfig = {
     // Bundles; takes precedence over contentBase
     // Static content
     static: path.resolve(path.join(__dirname, './../../')),
-    port: 5555,
+    port: 5404,
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',

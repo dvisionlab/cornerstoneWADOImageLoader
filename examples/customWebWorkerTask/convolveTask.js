@@ -27,32 +27,16 @@
   let convolveConfig;
 
   function initialize(config) {
-    console.log('CONVOLVE TASK:', config);
     convolveConfig = config;
   }
 
   function handler(data, doneCallback) {
-    /*if (doneCallback === undefined) {
-      doneCallback = function (result, transferList) {
-        // Send the result back to the main thread
-        console.log('RESULT:', result);
-        self.postMessage(
-          {
-            status: 'success',
-            result,
-          },
-          transferList
-        );
-      };
-    }*/
-
     if (!data || !data.data || !data.data.imageFrame) {
       console.error('Invalid data structure:', data);
     }
 
     // convert pixel data from ArrayBuffer to Int16Array since web workers support passing ArrayBuffers but
     // not typed arrays
-    console.log('DATA:', data);
     const imageFrame = data.data.imageFrame;
 
     const typedArrayConstructor = self[imageFrame.typedArrayName];
@@ -114,20 +98,6 @@
         convolvedPixelData[x + y * imageFrame.width] = pixel;
       }
     }
-
-    // once the task is done, we send a message back with our result and pass the pixeldata
-    // via the transferList to avoid a copy
-    //if (typeof doneCallback === 'function') {
-
-    /*doneCallback(
-      {
-        pixelData: convolvedPixelData.buffer,
-        minMax: getMinMax(convolvedPixelData),
-      },
-      [convolvedPixelData.buffer]
-    );*/
-    console.log('INPUT ARRAY:', pixelData);
-    console.log('RESULT:', convolvedPixelData);
 
     return {
       result: {

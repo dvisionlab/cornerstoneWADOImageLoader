@@ -77,8 +77,6 @@ function startTaskOnWebWorker() {
       // assign this task to this web worker and send the web worker
       // a message to execute it
       webWorkers[i].task = task;
-      console.log('TASK:', task);
-      console.log('TASK DATA:', task.data);
       webWorkers[i].worker.postMessage(
         {
           taskType: task.taskType,
@@ -104,60 +102,31 @@ function startTaskOnWebWorker() {
  * @param msg
  */
 function handleMessageFromWorker(msg) {
-  const workerIndex = msg.data.workerIndex || 0;
-
-  console.log('MESSAGE:', msg);
   if (msg.data.taskType === 'initialize') {
-    // Handle initialization message
-    if (workerIndex !== undefined && webWorkers[workerIndex]) {
-      webWorkers[workerIndex].status = 'ready';
-      startTaskOnWebWorker();
-    } else {
-      console.error('Invalid worker index during initialization:', workerIndex);
-    }
+    webWorkers[msg.data.workerIndex].status = 'ready';
+    startTaskOnWebWorker();
   } else {
-    // Handle task completion message
-    const worker = webWorkers[workerIndex];
+    const start = webWorkers[msg.data.workerIndex].task.start;
 
-    if (worker) {
-      const task = worker.task;
+    const action = msg.data.status === 'success' ? 'resolve' : 'reject';
 
-      if (task) {
-        if (msg.data.status === 'success') {
-          const result = msg.data.result || msg.data || undefined;
-
-          if (result !== undefined) {
-            task.deferred.resolve(result);
-          } else {
-            console.error('Result is undefined:', msg.data);
-            task.deferred.reject('Result is undefined');
-          }
-        } else {
-          const result = msg.data.result || msg.data || undefined;
-
-          if (result !== undefined) {
-            task.deferred.reject(result);
-          } else {
-            console.error('Result is undefined:', msg.data);
-            task.deferred.reject('Result is undefined');
-          }
-        }
-
-        // Clear the task for this worker
-        worker.task = undefined;
-
-        // Update statistics
-        statistics.numTasksExecuting--;
-        worker.status = 'ready';
-        statistics.numTasksCompleted++;
-      } else {
-        console.error('No task assigned to worker:', workerIndex);
-      }
-    } else {
-      console.error('Invalid worker index:', workerIndex);
+    try {
+      webWorkers[msg.data.workerIndex].task.deferred[action](msg.data.result);
+    } catch (e) {
+      // Do a catch here to ensure the web worker is available
+      console.warn('Caught error delivering response', e);
     }
 
-    // Start a new task if available
+    webWorkers[msg.data.workerIndex].task = undefined;
+
+    statistics.numTasksExecuting--;
+    webWorkers[msg.data.workerIndex].status = 'ready';
+    statistics.numTasksCompleted++;
+
+    const end = new Date().getTime();
+
+    statistics.totalTaskTimeInMS += end - start;
+
     startTaskOnWebWorker();
   }
 }
@@ -186,12 +155,11 @@ function spawnWebWorker() {
   //     name: `cornerstoneWADOImageLoaderWebWorkerPath-${webWorkers.length + 1}`,
   //   }
   // );
-  console.log('WEBWORKERS BEFORE:', webWorkers);
+
   webWorkers.push({
     worker,
     status: 'initializing',
   });
-  console.log('WEBWORKERS AFTER PUSH:', webWorkers);
   worker.addEventListener('message', handleMessageFromWorker);
   worker.postMessage({
     taskType: 'initialize',

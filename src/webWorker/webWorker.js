@@ -82,12 +82,8 @@ function loadWebWorkerTask(data) {
  */
 self.onmessage = async function (msg) {
   if (!msg.data.taskType) {
-    console.log(msg.data);
-
     return;
   }
-
-  // console.log('web worker onmessage', msg.data);
 
   // handle initialize message
   if (msg.data.taskType === 'initialize') {
@@ -106,43 +102,21 @@ self.onmessage = async function (msg) {
   // dispatch the message if there is a handler registered for it
   if (taskHandlers[msg.data.taskType]) {
     try {
-      console.log(
-        'POST MESSAGE DATA:',
-        taskHandlers[msg.data.taskType].handler(msg.data)
+      // Execute the task handler and store the result
+      const taskResult = await taskHandlers[msg.data.taskType].handler(
+        msg.data
       );
-      if (msg.data.taskType === 'sleepTask') {
-        const { result, timeout } = await taskHandlers[
-          msg.data.taskType
-        ].handler(msg.data);
 
-        const transferList = [];
-
-        self.postMessage(
-          {
-            taskType: msg.data.taskType,
-            status: 'success',
-            result: setTimeout(result, timeout),
-            workerIndex: msg.data.workerIndex,
-          },
-          transferList
-        );
-      } else {
-        const { result, transferList } = await taskHandlers[
-          msg.data.taskType
-        ].handler(msg.data);
-
-        console.log('WEB WORKER RESULTS:', result);
-
-        self.postMessage(
-          {
-            taskType: msg.data.taskType,
-            status: 'success',
-            result,
-            workerIndex: msg.data.workerIndex,
-          },
-          transferList
-        );
-      }
+      // Post the message
+      self.postMessage(
+        {
+          taskType: msg.data.taskType,
+          status: 'success',
+          result: taskResult.result,
+          workerIndex: msg.data.workerIndex,
+        },
+        taskResult.transferList
+      );
     } catch (error) {
       console.log(`task ${msg.data.taskType} failed - ${error.message}`, error);
       self.postMessage({

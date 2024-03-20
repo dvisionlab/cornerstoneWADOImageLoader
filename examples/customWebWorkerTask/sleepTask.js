@@ -4,22 +4,20 @@
 
   function sleepTaskInitialize(config) {
     sleepConfig = config;
-    console.log(sleepConfig);
   }
 
-  function sleepTaskHandler(data, doneCallback) {
-    // we fake real processing by setting a timeout
-    /*setTimeout(function () {
-      // once the task is done, we invoke the callback with our result
-      if (typeof doneCallback === 'function') {
-        doneCallback({});
-      }
-    }, sleepConfig.sleepTask.sleepTime);*/
+  function sleepTaskHandler(data) {
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        // once the task is done, we resolve the promise with the result
+        const result = {
+          result: {},
+          transferList: [],
+        };
 
-    return {
-      result: {},
-      timeout: sleepConfig.sleepTask.sleepTime,
-    };
+        resolve(result);
+      }, sleepConfig.sleepTask.sleepTime);
+    });
   }
 
   // register ourselves to receive messages
